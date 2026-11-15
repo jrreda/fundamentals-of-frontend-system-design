@@ -162,6 +162,8 @@ export class VirtualList {
       // update the text content of the recycled data
       this.#updateData(toRecycle, data);
     }
+
+    this.#updateElementsPosition("down");
   }
 
   async #handleTopObserver() {}
@@ -185,10 +187,36 @@ export class VirtualList {
    * @param direction {"top" | "down" }
    */
   #updateElementsPosition(direction) {
-    const [top, bottom] = getObservers();
+    const [topObserver, bottomObserver] = getObservers();
+    const cards = this.pool;
+    if (cards.length === 0) return;
+
+    // Read all heights up front, so the style writes below don't force a layout on every card
+    const cardHeights = cards.map((card) => card.getBoundingClientRect().height);
+
     if (direction === "down") {
+      // The first card is the anchor: keep its Y, or start at 0 on the first render
+      const anchorY = y(cards[0]) ?? 0;
+      y(cards[0], anchorY);
+      cards[0].style.transform = translateY(anchorY);
+
+      // Stack each following card right below the previous one
+      for (let index = 1; index < cards.length; index++) {
+        const previousCard = cards[index - 1];
+        const cardY = y(previousCard) + cardHeights[index - 1] + MARGIN * 2;
+        y(cards[index], cardY);
+        cards[index].style.transform = translateY(cardY); // transform runs on the GPU, no reflow
+      }
     } else if (direction === "top") {
       // To implement
     }
+
+    // Keep the observers at the edges of the rendered cards
+    const lastIndex = cards.length - 1;
+    const topObserverY = y(cards[0]);
+    const bottomObserverY =
+      y(cards[lastIndex]) + cardHeights[lastIndex] + MARGIN * 2;
+    topObserver.style.transform = translateY(topObserverY);
+    bottomObserver.style.transform = translateY(bottomObserverY);
   }
 }
