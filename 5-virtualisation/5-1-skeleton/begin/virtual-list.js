@@ -107,7 +107,7 @@ export class VirtualList {
     intersectionObserver(
       getObservers(),
       (entries) => this.#handleIntersectionObserver(entries),
-      { threshold: 0.2 },
+      { threshold: 0.2, rootMargin: '400px' },
     );
   }
 
@@ -127,9 +127,9 @@ export class VirtualList {
     console.log("Works!", entries);
     for (const entry of entries) {
       if (entry.isIntersecting) {
-        if (entry.target.id === "top-observer") {
+        if (entry.target.id === "top-observer" && this.start > 0) {
           void this.#handleTopObserver();
-        } else {
+        } else if (entry.target.id === "bottom-observer") {
           void this.#handleBottomObserver();
         }
       }
@@ -138,6 +138,7 @@ export class VirtualList {
 
   async #handleBottomObserver() {
     const data = await this.props.getPage(this.end++);
+    const container = getContainer();
 
     if (this.pool.length < this.limit) {
       const list = getVirtualList();
@@ -161,12 +162,27 @@ export class VirtualList {
 
       // update the text content of the recycled data
       this.#updateData(toRecycle, data);
+
+      this.start++;
     }
 
     this.#updateElementsPosition("down");
+    container.style.haeight = `${container.scrollHeight}px`;
   }
 
-  async #handleTopObserver() {}
+  async #handleTopObserver() {
+    this.start--;
+    this.end--;
+
+    const data = await this.props.getPage(this.start);
+    const [unchanged, toRecycle] = [
+      this.pool.slice(0, this.props.pageSize),
+      this.pool.slice(this.props.pageSize),
+    ];
+    this.pool = toRecycle.concat(unchanged);
+    this.#updateData(toRecycle, data);
+    this.#updateElementsPosition("top");
+  }
 
   /**
    * Function uses `props.getTemplate` to update the html elements
@@ -192,7 +208,9 @@ export class VirtualList {
     if (cards.length === 0) return;
 
     // Read all heights up front, so the style writes below don't force a layout on every card
-    const cardHeights = cards.map((card) => card.getBoundingClientRect().height);
+    const cardHeights = cards.map(
+      (card) => card.getBoundingClientRect().height,
+    );
 
     if (direction === "down") {
       // The first card is the anchor: keep its Y, or start at 0 on the first render
@@ -208,7 +226,12 @@ export class VirtualList {
         cards[index].style.transform = translateY(cardY); // transform runs on the GPU, no reflow
       }
     } else if (direction === "top") {
-      // To implement
+      for (let i = this.props.pageSize - 1; i >= 0; i--) {
+        const [current, next] = [this.pool[i], this.pool[i + 1]];
+        const newY = y(next) - MARGIN * 2 - cardHeights[i + 1];
+        y(current, newY);
+        current.style.transform = translateY(newY);
+      }
     }
 
     // Keep the observers at the edges of the rendered cards
