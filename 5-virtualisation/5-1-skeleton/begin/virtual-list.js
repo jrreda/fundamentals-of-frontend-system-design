@@ -167,19 +167,26 @@ export class VirtualList {
     }
 
     this.#updateElementsPosition("down");
-    container.style.haeight = `${container.scrollHeight}px`;
+    container.style.height = `${container.scrollHeight}px`;
   }
 
   async #handleTopObserver() {
+    // Slide the page window up by one: [start, end) -> [start - 1, end - 1)
     this.start--;
     this.end--;
 
     const data = await this.props.getPage(this.start);
+
+    // The bottom page left the window, so its cards get reused for the new top page
     const [unchanged, toRecycle] = [
       this.pool.slice(0, this.props.pageSize),
       this.pool.slice(this.props.pageSize),
     ];
+
+    // Move the recycled cards to the front of the pool
     this.pool = toRecycle.concat(unchanged);
+
+    // Fill them with the previous page's data, then place them above the rest
     this.#updateData(toRecycle, data);
     this.#updateElementsPosition("top");
   }
@@ -226,11 +233,14 @@ export class VirtualList {
         cards[index].style.transform = translateY(cardY); // transform runs on the GPU, no reflow
       }
     } else if (direction === "top") {
-      for (let i = this.props.pageSize - 1; i >= 0; i--) {
-        const [current, next] = [this.pool[i], this.pool[i + 1]];
-        const newY = y(next) - MARGIN * 2 - cardHeights[i + 1];
-        y(current, newY);
-        current.style.transform = translateY(newY);
+      // Only the recycled cards (first page of the pool) move; the rest keep their Y.
+      // Walk backwards so each card is placed right above the one after it
+      for (let index = this.props.pageSize - 1; index >= 0; index--) {
+        const nextCard = cards[index + 1];
+        // Subtract this card's own height, so its bottom edge sits one gap above nextCard
+        const cardY = y(nextCard) - cardHeights[index] - MARGIN * 2;
+        y(cards[index], cardY);
+        cards[index].style.transform = translateY(cardY);
       }
     }
 
